@@ -1,12 +1,10 @@
-"""
-testing.py
-
-This script exercises all core functionality of the classes defined in classes.py.
-Each section is commented to explain what is being tested.
-"""
-
 import os
+import shutil
 import uuid
+import pickle
+import unittest
+from datetime import datetime, timedelta
+
 from classes import (
     User, Customer, Admin,
     Ticket, SingleRaceTicket, WeekendPass, GroupTicket,
@@ -14,134 +12,231 @@ from classes import (
     TicketManager, DataManager
 )
 
-# Ensure a clean test environment by removing existing pickle files
-dm = DataManager(folder="test_data")
-for key, path in dm._DataManager__files.items():
-    try:
-        os.remove(path)
-    except FileNotFoundError:
-        pass
+class TestUserAndCustomer(unittest.TestCase):
+    def setUp(self):
+        self.user = User("Alice", "alice@example.com", "pass123")
+        self.cust = Customer("Bob", "bob@example.com", "secret")
 
-# ----------------------------
-# 1. User Creation and Accessors
-# ----------------------------
-# Create a customer and admin, test getters and setters
-cust = Customer("Ahmad", "ahmad@example.com", "Ahmadpass")
-admin = Admin("Yousif", "yousif@example.com", "Yousifpass", admin_code="ADM001")
+    def test_user_getters_setters_and_password(self):
+        # ID is a UUID
+        uuid.UUID(self.user.get_id())
+        self.assertEqual(self.user.get_name(), "Alice")
+        self.user.set_name("Alicia")
+        self.assertEqual(self.user.get_name(), "Alicia")
 
-# Test User getters
-print("User ID:", cust.get_id())
-print("Name:", cust.get_name())
-print("Email:", cust.get_email())
+        self.assertEqual(self.user.get_email(), "alice@example.com")
+        self.user.set_email("ali@example.com")
+        self.assertEqual(self.user.get_email(), "ali@example.com")
 
-# Test setters
-cust.set_name("Ahmed Mahmood")
-cust.set_email("Ahmed.Mahmood@example.com")
-cust.set_password("newpass")
-print("Updated Name:", cust.get_name())
-print("Updated Email:", cust.get_email())
-print("Password Valid:", cust.check_password("newpass"))
+        # password check and setter
+        self.assertTrue(self.user.check_password("pass123"))
+        self.user.set_password("newpass")
+        self.assertTrue(self.user.check_password("newpass"))
 
-# ----------------------------
-# 2. Ticket Types and Discounts
-# ----------------------------
-# Instantiate different ticket types
-single = SingleRaceTicket()
-weekend = WeekendPass()
-group = GroupTicket(group_size=4)
+        # created_at is recent
+        now = datetime.now()
+        self.assertTrue(now - self.user.get_created_at() < timedelta(seconds=1))
 
-# Verify base prices
-print("Single Ticket Price:", single.get_price())
-print("Weekend Pass Price:", weekend.get_price())
-print("Group Ticket Price:", group.get_price(), "(for 4 people)")
+    def test_customer_reservations(self):
+        # initially empty
+        self.assertEqual(self.cust.get_reservations(), [])
+        # create a dummy reservation
+        dummy_event = Event("2025-12-01", "Dubai")
+        dummy_ticket = SingleRaceTicket()
+        res = Reservation(self.cust.get_id(), [dummy_ticket], dummy_event, "card")
+        self.cust.add_reservation(res)
+        self.assertEqual(len(self.cust.get_reservations()), 1)
+        # delete it
+        self.cust.delete_reservation(res.get_reservation_id())
+        self.assertEqual(self.cust.get_reservations(), [])
 
-# Create and test a discount
-disc = Discount(name="Weekend Promo", percentage=20, ticket_type="Weekend Pass")
-print("Discount active?", disc.is_active())
-discounted_price = disc.apply_discount(weekend.get_price())
-print("Discounted Weekend Pass Price:", discounted_price)
+class TestAdmin(unittest.TestCase):
+    def setUp(self):
+        self.admin = Admin("Manager", "mgr@example.com", "adm1n", "CODEX")
 
-# Deactivate and test that price returns to full
-disc.deactivate()
-print("Discount active after deactivate?", disc.is_active())
-print("Price after deactivation:", disc.apply_discount(weekend.get_price()))
+    def test_admin_code_and_inheritance(self):
+        self.assertEqual(self.admin.get_admin_code(), "CODEX")
+        self.admin.set_admin_code("NEWCODE")
+        self.assertEqual(self.admin.get_admin_code(), "NEWCODE")
+        # also inherits user methods
+        self.assertTrue(self.admin.check_password("adm1n"))
+        self.admin.set_password("xyz")
+        self.assertTrue(self.admin.check_password("xyz"))
 
-# ----------------------------
-# 3. TicketManager Functionality
-# ----------------------------
-tm = TicketManager()
-# Register tickets and discounts
-tm.register_ticket(single)
-tm.register_ticket(weekend)
-tm.register_ticket(group)
-tm.add_discount(disc)
+class TestTicketTypes(unittest.TestCase):
+    def test_generic_ticket(self):
+        t = Ticket("Test", 100.0, 2, ["A", "B"])
+        tid = uuid.UUID(t.get_ticket_id())  # id format
+        self.assertEqual(t.get_name(), "Test")
+        t.set_name("Demo")
+        self.assertEqual(t.get_name(), "Demo")
 
-# List available ticket names
-print("Registered Ticket Types:", tm.get_ticket_types())
+        self.assertEqual(t.get_price(), 100.0)
+        t.set_price(120.0)
+        self.assertEqual(t.get_price(), 120.0)
 
-# Test discount application via manager
-print("Manager applies discount (should be full price):", tm.apply_discount(weekend))
+        self.assertEqual(t.get_valid_days(), 2)
+        t.set_valid_days(5)
+        self.assertEqual(t.get_valid_days(), 5)
 
-# Reactivate discount and test
-disc.activate()
-print("Manager applies discount (20% off):", tm.apply_discount(weekend))
+        self.assertListEqual(t.get_features(), ["A","B"])
+        t.set_features(["X"])
+        self.assertListEqual(t.get_features(), ["X"])
 
-# Record and report sales
-tm.record_sale(quantity=3)
-tm.record_sale(quantity=2)
-print("Sales Log:", tm.get_sales_report())
+    def test_specialized_tickets(self):
+        s = SingleRaceTicket()
+        self.assertEqual(s.get_name(), "Single Race Ticket")
+        self.assertEqual(s.get_price(), 300.0)
+        self.assertEqual(s.get_valid_days(), 1)
+        self.assertIn("Access to one race", s.get_features())
 
-# ----------------------------
-# 4. Reservation Workflow
-# ----------------------------
-# Create an event
-event = Event(date="2025-05-10", location="Yas Marina Circuit")
-print("Event Info:", event.get_date(), event.get_location())
+        w = WeekendPass()
+        self.assertEqual(w.get_name(), "Weekend Pass")
+        self.assertEqual(w.get_price(), 750.0)
+        self.assertEqual(w.get_valid_days(), 3)
 
-# Make a reservation for the customer
-reservation = Reservation(
-    customer_id=cust.get_id(),
-    tickets=[single, group],
-    event=event,
-    payment_method="Credit Card"
-)
+        g = GroupTicket(4)
+        # unit_price = max(250, 300 - 4*5) = 280, total = 280*4
+        self.assertEqual(g.get_price(), 280 * 4)
+        self.assertEqual(g.get_group_size(), 4)
+        g.set_group_size(5)
+        self.assertEqual(g.get_group_size(), 5)
 
-# Confirm reservation details
-print("Reservation ID:", reservation.get_reservation_id())
-print("Reservation Total Cost:", reservation.get_total_cost())
+class TestEventAndReservation(unittest.TestCase):
+    def setUp(self):
+        self.event = Event("2025-11-05", "Abu Dhabi")
+        self.t1 = SingleRaceTicket()
+        self.t2 = WeekendPass()
 
-# Modify payment method and ticket list
-reservation.set_payment_method("Debit Card")
-print("Updated Payment Method:", reservation.get_payment_method())
-reservation.set_tickets([single])  # remove group ticket
-print("Updated Total Cost:", reservation.get_total_cost())
+    def test_event_fields(self):
+        eid = uuid.UUID(self.event.get_event_id())
+        self.assertEqual(self.event.get_date(), "2025-11-05")
+        self.event.set_date("2025-12-01")
+        self.assertEqual(self.event.get_date(), "2025-12-01")
+        self.assertEqual(self.event.get_location(), "Abu Dhabi")
+        self.event.set_location("Dubai")
+        self.assertEqual(self.event.get_location(), "Dubai")
 
-# ----------------------------
-# 5. Customer Reservation Management
-# ----------------------------
-cust.add_reservation(reservation)
-print("Customer Reservations after add:", cust.get_reservations())
+    def test_reservation_logic(self):
+        res = Reservation("cust123", [self.t1, self.t2], self.event, "wallet")
+        rid = uuid.UUID(res.get_reservation_id())
+        self.assertEqual(res.get_customer_id(), "cust123")
+        self.assertListEqual([t.get_ticket_id() for t in res.get_tickets()],
+                             [self.t1.get_ticket_id(), self.t2.get_ticket_id()])
+        # total cost = 300 + 750
+        self.assertEqual(res.get_total_cost(), 1050.0)
+        # change tickets
+        new_tix = [self.t1]
+        res.set_tickets(new_tix)
+        self.assertEqual(res.get_total_cost(), 300.0)
+        # payment method
+        self.assertEqual(res.get_payment_method(), "wallet")
+        res.set_payment_method("card")
+        self.assertEqual(res.get_payment_method(), "card")
+        # reservation_time is recent
+        self.assertTrue(datetime.now() - res.get_reservation_time() < timedelta(seconds=1))
 
-# Delete reservation
-cust.delete_reservation(reservation.get_reservation_id())
-print("Customer Reservations after delete:", cust.get_reservations())
+class TestDiscount(unittest.TestCase):
+    def setUp(self):
+        self.disc = Discount("EarlyBird", 20, "Single Race Ticket")
 
-# ----------------------------
-# 6. Persistence with DataManager
-# ----------------------------
-# Save users, reservations, discounts, and sales to disk
-dm.save_users([cust, admin])
-dm.save_reservations([reservation])
-dm.save_discounts([disc])
-dm.save_sales(tm.get_sales_report())
+    def test_discount_fields_and_apply(self):
+        self.assertEqual(self.disc.get_name(), "EarlyBird")
+        self.disc.set_name("LateBird")
+        self.assertEqual(self.disc.get_name(), "LateBird")
 
-# Load back from disk and verify
-loaded_users = dm.load_users()
-loaded_reservations = dm.load_reservations()
-loaded_discounts = dm.load_discounts()
-loaded_sales = dm.load_sales()
+        self.assertEqual(self.disc.get_percentage(), 20)
+        self.disc.set_percentage(50)
+        self.assertEqual(self.disc.get_percentage(), 50)
 
-print("Loaded Users:", [u.get_email() for u in loaded_users])
-print("Loaded Reservations:", [r.get_reservation_id() for r in loaded_reservations])
-print("Loaded Discounts:", [d.get_name() for d in loaded_discounts])
-print("Loaded Sales:", loaded_sales)
+        self.assertEqual(self.disc.get_ticket_type(), "Single Race Ticket")
+        self.disc.set_ticket_type("Weekend Pass")
+        self.assertEqual(self.disc.get_ticket_type(), "Weekend Pass")
+
+        self.assertTrue(self.disc.is_active())
+        price = 100.0
+        # 50% off
+        self.assertEqual(self.disc.apply_discount(price), 50.0)
+        self.disc.deactivate()
+        self.assertFalse(self.disc.is_active())
+        self.assertEqual(self.disc.apply_discount(price), 100.0)
+
+class TestTicketManager(unittest.TestCase):
+    def setUp(self):
+        self.tm = TicketManager()
+        # register sample tickets
+        self.t1 = SingleRaceTicket()
+        self.t2 = WeekendPass()
+        self.tm.register_ticket(self.t1)
+        self.tm.register_ticket(self.t2)
+        # add a discount
+        self.disc = Discount("GroupSale", 10, self.t2.get_name())
+        self.tm.add_discount(self.disc)
+
+    def test_ticket_lookup_and_types(self):
+        self.assertEqual(self.tm.get_ticket_by_name(self.t1.get_name()), self.t1)
+        self.assertListEqual(sorted(self.tm.get_ticket_types()),
+                             sorted([self.t1.get_name(), self.t2.get_name()]))
+
+    def test_discounts_and_sales(self):
+        # discount applies only to WeekendPass
+        price = self.tm.apply_discount(self.t2)
+        self.assertEqual(price, round(750 * 0.9, 2))
+        # no discount for SingleRaceTicket
+        self.assertEqual(self.tm.apply_discount(self.t1), 300.0)
+
+        # record sales
+        self.tm.record_sale(2)
+        rpt = self.tm.get_sales_report()
+        today = datetime.now().strftime("%Y-%m-%d")
+        self.assertEqual(rpt.get(today), 2)
+        # record more
+        self.tm.record_sale(3)
+        rpt2 = self.tm.get_sales_report()
+        self.assertEqual(rpt2.get(today), 5)
+
+class TestDataManager(unittest.TestCase):
+    TEST_DIR = "test_data_mgr"
+
+    def setUp(self):
+        # create fresh folder
+        if os.path.exists(self.TEST_DIR):
+            shutil.rmtree(self.TEST_DIR)
+        os.mkdir(self.TEST_DIR)
+        self.dm = DataManager(folder=self.TEST_DIR)
+
+    def tearDown(self):
+        shutil.rmtree(self.TEST_DIR)
+
+    def test_users_persistence(self):
+        users = [User("X","x@x.com","pw"), User("Y","y@y.com","pw2")]
+        self.dm.save_users(users)
+        loaded = self.dm.load_users()
+        self.assertEqual(len(loaded), 2)
+        self.assertEqual(loaded[0].get_email(), "x@x.com")
+
+    def test_reservations_persistence(self):
+        ev = Event("2025-01-01", "TestCity")
+        res = Reservation("cid", [SingleRaceTicket()], ev, "card")
+        self.dm.save_reservations([res])
+        loaded = self.dm.load_reservations()
+        self.assertEqual(len(loaded), 1)
+        self.assertEqual(loaded[0].get_customer_id(), "cid")
+
+    def test_discounts_persistence(self):
+        disc = Discount("D","20","Single Race Ticket")
+        self.dm.save_discounts([disc])
+        loaded = self.dm.load_discounts()
+        self.assertEqual(len(loaded), 1)
+        self.assertEqual(loaded[0].get_name(), "D")
+
+    def test_sales_persistence(self):
+        sales = {"2025-05-10": 7}
+        self.dm.save_sales(sales)
+        loaded = self.dm.load_sales()
+        self.assertIsInstance(loaded, dict)
+        self.assertEqual(loaded.get("2025-05-10"), 7)
+
+
+if __name__ == "__main__":
+    unittest.main()
