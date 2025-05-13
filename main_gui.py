@@ -4,7 +4,7 @@ from tkinter import messagebox
 
 from classes import (
     Customer, Admin, TicketManager, DataManager,
-    SingleRaceTicket, WeekendPass, GroupTicket, Event, Reservation, Discount
+    SingleRaceTicket, WeekendPass, GroupTicket, SeasonMembership, Event, Reservation, Discount
 )
 from gui_functions import clear_screen
 from customer_views import show_customer_menu
@@ -19,6 +19,7 @@ tm.register_ticket(SingleRaceTicket())
 tm.register_ticket(WeekendPass())
 tm.register_ticket(GroupTicket(4))
 tm.register_ticket(GroupTicket(10))
+tm.register_ticket(SeasonMembership()) 
 
 discounts = [
     Discount("Weekend Promo", 20, "Weekend Pass"),
