@@ -149,6 +149,15 @@ class GroupTicket(Ticket):
         self.__group_size = size
 
 
+class SeasonMembership(Ticket):
+    def __init__(self):
+        super().__init__(
+            name="Season Membership",
+            price=2500.0,
+            valid_days=365,
+            features=["Year-round access", "VIP seating", "Paddock access", "Meet & greet sessions"]
+        )
+
 class Event:
     def __init__(self, date: str, location: str):
         self.__event_id = str(uuid.uuid4())
